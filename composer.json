@@ -1,0 +1,13 @@
+{
+    "name": "alkaruno/crud",
+    "description": "CRUD builder for phpframework",
+    "require": {
+        "php": ">=5.4",
+        "alkaruno/phpframework": "dev-master"
+    },
+    "autoload": {
+        "psr-4": {
+            "Xplosio\\Crud\\": "src/"
+        }
+    }
+}
