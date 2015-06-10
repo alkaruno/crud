@@ -59,6 +59,11 @@ class Field
         return null;
     }
 
+    public function save($id, $value)
+    {
+        ;
+    }
+
     public function getHumanValue($value, $form = false)
     {
         return $value;

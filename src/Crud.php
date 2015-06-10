@@ -9,64 +9,47 @@ class Crud
     private $table;
     private $url;
     private $title;
+    private $options;
     /*** @var Field[] */
     private $fields = [];
     private $listFields = [];
     private $listOrder = 'id DESC';
     private $callbacks = [];
 
-    private function __construct()
-    {
-    }
+    const CALLBACK_BEFORE_SAVE = 'before.save';
 
-    public static function create($options = [])
-    {
-        return new Crud();
-    }
-
-    public function table($table)
+    public function __construct($table, $url, $title)
     {
         $this->table = $table;
-        return $this;
-    }
-
-    public function url($url)
-    {
         $this->url = $url;
-        return $this;
-    }
-
-    public function title($title)
-    {
         $this->title = $title;
-        return $this;
     }
 
-    public function fields()
+    public function setOptions($options)
     {
-        foreach ($this->getArrayFunctionParam(func_get_args()) as $field) {
-            $this->fields[$field->name] = $field;
-        }
-
+        $this->options = $options;
         return $this;
     }
 
-    public function listFields()
+    public function addField(Field $field)
+    {
+        $this->fields[$field->name] = $field;
+        return $this;
+    }
+
+    public function setListFields()
     {
         $this->listFields = $this->getArrayFunctionParam(func_get_args());
         return $this;
     }
 
-    public function listOrder($order)
+    public function setListOrder($order)
     {
         $this->listOrder = $order;
         return $this;
     }
 
-    /*
-     * save.before, save.after
-     */
-    public function callback($action, $function)
+    public function addCallback($action, $function)
     {
         $this->callbacks[$action] = $function;
         return $this;
@@ -76,17 +59,18 @@ class Crud
     {
         ob_start();
 
-        $id = $this->input('id');
-        $id = $id != null ? (int)$id : null;
+        $id = $this->getInputParam('id');
+        $id = $id !== null ? (int)$id : null;
         $method = $_SERVER['REQUEST_METHOD'];
 
-        if ($method == 'POST') {
-            if (isset($_POST['__delete']) && $id != null) {
+        if ($method === 'POST') {
+            if (array_key_exists('__delete', $_POST) && $id !== null) {
                 $this->deleteItem($id);
+            } else {
+                $this->validateAndSave($id);
             }
-            $this->validateAndSave($id);
         } else {
-            if ($id != null || $this->input('action') == 'add') {
+            if ($id !== null || $this->getInputParam('action') === 'add') {
                 $this->showForm($id);
             } else {
                 $this->showList();
@@ -96,9 +80,11 @@ class Crud
         return ob_get_clean();
     }
 
+    /* private */
+
     private function showList()
     {
-        $rows = Db::getRows(sprintf('SELECT * FROM `%s` ORDER BY %s', $this->table, $this->listOrder));
+        $rows = Db::getRows('SELECT * FROM `' . $this->table . '` ORDER BY ' . $this->listOrder);
         foreach ($rows as &$row) {
             foreach ($this->listFields as $field) {
                 $row[$field] = $this->fields[$field]->getHumanValue($row[$field]);
@@ -110,7 +96,7 @@ class Crud
 
     private function showForm($id)
     {
-        $data = $id != null ? Db::getRow('SELECT * FROM `' . $this->table . '` WHERE id = ?', $id) : [];
+        $data = $id !== null ? Db::getRow('SELECT * FROM `' . $this->table . '` WHERE id = ?', $id) : [];
 
         foreach ($this->fields as $field) {
             if (!empty($data[$field->name])) {
@@ -126,16 +112,18 @@ class Crud
         $pairs = $values = [];
         foreach ($this->fields as $field) {
             $value = !empty($_POST[$field->name]) ? trim($_POST[$field->name]) : null;
-            $pairs[] = '`' . $field->name . '` = ?';
+            $pairs[] = "`{$field->name}` = ?";
             $values[] = $field->getDatabaseValue($value);
         }
 
-        Db::update(sprintf('%s `%s` SET %s %s',
-            $id == null ? 'INSERT INTO' : 'UPDATE',
+        Db::query(sprintf('%s `%s` SET %s %s',
+            $id === null ? 'INSERT INTO' : 'UPDATE',
             $this->table,
             implode(',', $pairs),
-            $id != null ? 'WHERE id = ' . $id : ''
+            $id !== null ? 'WHERE id = ' . $id : ''
         ), $values);
+
+        $id = $id === null ?: Db::getLastInsertId();
 
         header('Location: ' . $this->url);
         exit;
@@ -149,20 +137,26 @@ class Crud
         exit;
     }
 
-    private function input($name, $default = null)
-    {
-        return isset($_GET[$name]) ? $_GET[$name] : $default;
-    }
-
     private function showView($view, $data)
     {
-        $data['fields'] = $this->fields;
         extract($data);
+        $lang = include(__DIR__ . '/l10n/' . $this->getOptionsParam('lang', 'en') . '.php');
         include __DIR__ . '/views/' . $view . '.php';
     }
 
     private function getArrayFunctionParam($args)
     {
-        return count($args) == 1 && is_array($args[0]) ? $args[0] : $args;
+        return count($args) === 1 && is_array($args[0]) ? $args[0] : $args;
+    }
+
+    private function getOptionsParam($name, $default = null)
+    {
+        $hasParam = is_array($this->options) && array_key_exists($name, $this->options);
+        return $hasParam ? $this->options[$name] : $default;
+    }
+
+    private function getInputParam($name, $default = null)
+    {
+        return array_key_exists($name, $_GET) ? $_GET[$name] : $default;
     }
 }
